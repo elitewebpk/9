@@ -1,18 +1,17 @@
 {
   "name": "alfred-backend",
   "version": "0.1.0",
-  "description": "Backend brain for Alfred Android AI assistant.",
   "type": "module",
-  "main": "src/server.js",
+  "private": true,
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js"
   },
   "dependencies": {
+    "@google/genai": "^1.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "@google/genai": "latest"
     "zod": "^3.24.1"
   }
 }

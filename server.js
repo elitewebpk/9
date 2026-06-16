@@ -67,12 +67,28 @@ app.post('/api/alfred/chat', async (req, res) => {
 
     // Uses the OpenAI Responses API. Keep the key on this server only.
     const response = await openai.responses.create({
-      model,
-      instructions: ALFRED_SYSTEM_PROMPT,
-      input,
-      reasoning: { effort: 'low' },
-      text: { format: { type: 'json_object' } }
-    });
+  model,
+  instructions: `${ALFRED_SYSTEM_PROMPT}
+
+You must respond with valid JSON only.
+Return exactly one JSON object with this shape:
+{
+  "reply": "string",
+  "action": {
+    "name": "open_app",
+    "args": {}
+  },
+  "requiresConfirmation": false
+}
+
+Allowed action names:
+open_app, go_home, go_back, scroll_down, scroll_up, summarize_notifications, no_action.
+
+Do not include markdown, code fences, explanations, or extra text. JSON only.`,
+  input: `Return valid JSON only for this request:\n${input}`,
+  reasoning: { effort: 'low' },
+  text: { format: { type: 'json_object' } }
+});
 
     const raw = response.output_text;
     const json = JSON.parse(raw);

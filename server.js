@@ -13,7 +13,7 @@ if (!process.env.GEMINI_API_KEY) {
 }
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-const model = process.env.ALFRED_MODEL || 'gemini-2.5-flash';
+const model = process.env.ALFRED_MODEL || 'gemini-2.5-flash-lite';
 
 app.use(cors({ origin: process.env.ALFRED_ALLOWED_ORIGIN || '*' }));
 app.use(express.json({ limit: '1mb' }));
@@ -79,7 +79,9 @@ Return exactly one JSON object with this shape:
   "reply": "string",
   "action": {
     "name": "open_app",
-    "args": {}
+    "args": {
+      "appName": "youtube"
+    }
   },
   "requiresConfirmation": false
 }
@@ -89,16 +91,20 @@ open_app, go_home, go_back, scroll_down, scroll_up, summarize_notifications, no_
 
 For open_app, use args like:
 {
-  "packageName": "com.google.android.youtube"
+  "appName": "youtube"
 }
 
-Common package names:
-YouTube = com.google.android.youtube
-WhatsApp = com.whatsapp
-Chrome = com.android.chrome
-Instagram = com.instagram.android
-Gmail = com.google.android.gm
+Common appName values:
+youtube
+whatsapp
+chrome
+instagram
+gmail
+maps
+camera
+settings
 
+Do not use packageName.
 Do not include markdown.
 Do not include code fences.
 Do not include explanations outside JSON.
@@ -128,7 +134,45 @@ ${input}`;
       });
     }
 
-    return res.json(validated.data);
+    const finalData = validated.data;
+
+    if (finalData.action.name === 'open_app') {
+      const lowerMessage = message.toLowerCase();
+
+      const appMap = [
+        { keywords: ['youtube', 'yt'], appName: 'youtube' },
+        { keywords: ['whatsapp', 'whatapp', 'wa'], appName: 'whatsapp' },
+        { keywords: ['chrome', 'google chrome'], appName: 'chrome' },
+        { keywords: ['instagram', 'insta', 'ig'], appName: 'instagram' },
+        { keywords: ['gmail', 'email'], appName: 'gmail' },
+        { keywords: ['maps', 'google maps'], appName: 'maps' },
+        { keywords: ['camera'], appName: 'camera' },
+        { keywords: ['settings'], appName: 'settings' }
+      ];
+
+      const match = appMap.find(app =>
+        app.keywords.some(keyword => lowerMessage.includes(keyword))
+      );
+
+      if (match && !finalData.action.args.appName) {
+        finalData.action.args.appName = match.appName;
+      }
+
+      if (finalData.action.args.packageName && !finalData.action.args.appName) {
+        const packageToApp = {
+          'com.google.android.youtube': 'youtube',
+          'com.whatsapp': 'whatsapp',
+          'com.android.chrome': 'chrome',
+          'com.instagram.android': 'instagram',
+          'com.google.android.gm': 'gmail'
+        };
+
+        finalData.action.args.appName = packageToApp[finalData.action.args.packageName] || '';
+        delete finalData.action.args.packageName;
+      }
+    }
+
+    return res.json(finalData);
   } catch (error) {
     console.error(error);
     return res.status(500).json({

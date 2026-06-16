@@ -1,19 +1,19 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { ALFRED_SYSTEM_PROMPT } from './alfredPrompt.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
 
-if (!process.env.OPENAI_API_KEY) {
-  console.warn('WARNING: OPENAI_API_KEY is missing. Add it to .env before using /api/alfred/chat.');
+if (!process.env.GEMINI_API_KEY) {
+  console.warn('WARNING: GEMINI_API_KEY is missing. Add it to Vercel Environment Variables.');
 }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const model = process.env.ALFRED_MODEL || 'gpt-5.5';
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const model = process.env.ALFRED_MODEL || 'gemini-2.5-flash';
 
 app.use(cors({ origin: process.env.ALFRED_ALLOWED_ORIGIN || '*' }));
 app.use(express.json({ limit: '1mb' }));
@@ -53,8 +53,12 @@ app.get('/health', (_req, res) => {
 
 app.post('/api/alfred/chat', async (req, res) => {
   const parsed = ChatRequest.safeParse(req.body);
+
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+    return res.status(400).json({
+      error: 'Invalid request',
+      details: parsed.error.flatten()
+    });
   }
 
   const { message, context } = parsed.data;
@@ -65,12 +69,11 @@ app.post('/api/alfred/chat', async (req, res) => {
       phoneContext: context || { recentNotifications: [] }
     });
 
-    // Uses the OpenAI Responses API. Keep the key on this server only.
-    const response = await openai.responses.create({
-  model,
-  instructions: `${ALFRED_SYSTEM_PROMPT}
+    const prompt = `${ALFRED_SYSTEM_PROMPT}
 
-You must respond with valid JSON only.
+You are Alfred, a mobile phone assistant.
+
+Return valid JSON only.
 Return exactly one JSON object with this shape:
 {
   "reply": "string",
@@ -84,19 +87,41 @@ Return exactly one JSON object with this shape:
 Allowed action names:
 open_app, go_home, go_back, scroll_down, scroll_up, summarize_notifications, no_action.
 
-Do not include markdown, code fences, explanations, or extra text. JSON only.`,
-  input: `Return valid JSON only for this request:\n${input}`,
-  reasoning: { effort: 'low' },
-  text: { format: { type: 'json_object' } }
-});
+For open_app, use args like:
+{
+  "packageName": "com.google.android.youtube"
+}
 
-    const raw = response.output_text;
+Common package names:
+YouTube = com.google.android.youtube
+WhatsApp = com.whatsapp
+Chrome = com.android.chrome
+Instagram = com.instagram.android
+Gmail = com.google.android.gm
+
+Do not include markdown.
+Do not include code fences.
+Do not include explanations outside JSON.
+
+User request object:
+${input}`;
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.2
+      }
+    });
+
+    const raw = response.text;
     const json = JSON.parse(raw);
     const validated = ActionResponse.safeParse(json);
 
     if (!validated.success) {
       return res.json({
-        reply: "I understood you, but my action format failed. Please repeat that command.",
+        reply: 'I understood you, but my action format failed. Please repeat that command.',
         action: { name: 'no_action', args: {} },
         requiresConfirmation: false,
         debug: { raw }
